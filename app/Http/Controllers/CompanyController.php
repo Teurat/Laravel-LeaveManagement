@@ -7,99 +7,104 @@ use Illuminate\Http\Request;
 
 class CompanyController extends Controller
 {
-    /**
-     * Display a listing of the companies.
-     */
     public function index()
     {
-        $companies = Company::paginate(3);
+        $companies = auth()->user()->companies()->withCount('employees')->paginate(10);
         return view('companies.index', compact('companies'));
     }
 
-    /**
-     * Show the form for creating a new company.
-     */
     public function create()
     {
         return view('companies.create');
     }
 
-    /**
-     * Store a newly created company in the database.
-     */
     public function store(Request $request)
     {
         $request->validate([
-            'name' => 'required|string|max:255',
-            'NrEmployees' => 'required|integer',
+            'name'          => 'required|string|max:255',
+            'NrEmployees'   => 'required|integer|min:0',
             'FoundationYear' => 'required|integer|min:1800|max:' . now()->year,
         ]);
 
-        Company::create($request->only('name', 'NrEmployees', 'FoundationYear'));
+        $company = auth()->user()->companies()->create(
+            $request->only('name', 'NrEmployees', 'FoundationYear')
+        );
+
+        // Start onboarding wizard if a target headcount was provided
+        if ($company->NrEmployees > 0) {
+            session([
+                'onboarding' => [
+                    'company_id'   => $company->id,
+                    'company_name' => $company->name,
+                    'target'       => $company->NrEmployees,
+                    'added'        => 0,
+                ],
+            ]);
+
+            return redirect()
+                ->route('employees.create', ['company_id' => $company->id])
+                ->with('info', "Company \"{$company->name}\" created! Register its {$company->NrEmployees} employees below.");
+        }
 
         return redirect()->route('companies.index')->with('success', 'Company created successfully.');
     }
 
-    /**
-     * Display the specified company.
-     */
     public function show(Company $company)
     {
+        abort_unless($company->user_id === auth()->id(), 403);
+        $company->loadCount('employees');
         return view('companies.show', compact('company'));
     }
 
-    /**
-     * Show the form for editing the specified company.
-     */
     public function edit(Company $company)
     {
+        abort_unless($company->user_id === auth()->id(), 403);
         return view('companies.edit', compact('company'));
     }
 
-    /**
-     * Update the specified company in the database.
-     */
     public function update(Request $request, Company $company)
     {
+        abort_unless($company->user_id === auth()->id(), 403);
+
         $request->validate([
             'name' => 'required|string|max:255',
             'NrEmployees' => 'required|integer',
             'FoundationYear' => 'required|integer|min:1800|max:' . now()->year,
         ]);
 
-        $company->update($request->all());
+        $company->update($request->only('name', 'NrEmployees', 'FoundationYear'));
 
         return redirect()->route('companies.index')->with('success', 'Company updated successfully.');
     }
 
-   
     public function destroy(Company $company)
     {
+        abort_unless($company->user_id === auth()->id(), 403);
+
         $company->delete();
         return redirect()->route('companies.index')->with('success', 'Company deleted successfully.');
     }
-    
+
     public function import(Request $request)
     {
         $request->validate([
-        'csv_file' => 'required|file|mimes:csv,txt',
-    ]);
-
-    $file = $request->file('csv_file');
-    $data = array_map('str_getcsv', file($file));
-
-    foreach ($data as $index => $row) {
-        if ($index === 0) continue; // skip header row
-
-        Company::create([
-            'name' => $row[0] ?? '',
-            'NrEmployees' => $row[1] ?? '',
-            'FoundationYear' => $row[2] ?? ''
+            'csv_file' => 'required|file|mimes:csv,txt',
         ]);
-    }
 
-    return redirect()->route('companies.index')->with('success', 'Companies imported successfully.');
-    }
+        $file = $request->file('csv_file');
+        $data = array_map('str_getcsv', file($file));
 
+        foreach ($data as $index => $row) {
+            if ($index === 0) continue;
+
+            auth()->user()->companies()->create([
+                'name' => $row[0] ?? '',
+                'NrEmployees' => $row[1] ?? 0,
+                'FoundationYear' => $row[2] ?? now()->year,
+            ]);
+        }
+
+        return redirect()->route('companies.index')->with('success', 'Companies imported successfully.');
+    }
 }
 

@@ -11,34 +11,36 @@ class DashboardController extends Controller
 {
     public function index()
     {
-        // Total employees
-        $totalEmployees = Employee::count();
+        $companyIds = auth()->user()->companies()->pluck('id');
+        $employeeIds = Employee::whereIn('company_id', $companyIds)->pluck('id');
 
-        $totalCompanies = Company::count();
+        $totalEmployees = Employee::whereIn('company_id', $companyIds)->count();
+        $totalCompanies = auth()->user()->companies()->count();
 
-        // Employees per company
-        $employeesPerCompany = Company::withCount('employees')->get()
+        $employeesPerCompany = auth()->user()->companies()
+            ->withCount('employees')
+            ->get()
             ->pluck('employees_count', 'name');
 
-        // Total annual leave days accumulated
-        $totalAnnualLeaveDays = Employee::sum('AnnualLeaveDays');
+        $totalAnnualLeaveDays = Employee::whereIn('company_id', $companyIds)->sum('AnnualLeaveDays');
 
-        // Employees currently on leave (today between DateFrom and DateTo)
         $today = now()->toDateString();
-        $employeesOnLeave = Leave::where('isApproved', true)
+        $employeesOnLeave = Leave::whereIn('employee_id', $employeeIds)
+            ->where('isApproved', true)
             ->where('DateFrom', '<=', $today)
             ->where('DateTo', '>=', $today)
             ->distinct('employee_id')
             ->count('employee_id');
 
-        $pendingApprovals = Leave::where('isApproved', false)->count();
+        $pendingApprovals = Leave::whereIn('employee_id', $employeeIds)
+            ->where('isApproved', false)
+            ->count();
 
-        // Employees hired per year (for chart)
-        $hiredPerYear = Employee::selectRaw('YEAR(EmployedInCompany) as year, COUNT(*) as count')
+        $hiredPerYear = Employee::whereIn('company_id', $companyIds)
+            ->selectRaw('YEAR(EmployedInCompany) as year, COUNT(*) as count')
             ->groupBy('year')
             ->orderBy('year', 'asc')
             ->get();
-
 
         return view('dashboard', [
             'totalEmployees' => $totalEmployees,

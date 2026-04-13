@@ -1,60 +1,114 @@
-    @extends('layouts.app')
+@extends('layouts.app')
+@section('title', 'Add Leave')
+@section('content')
 
-    @section('title', 'Create Leave')
+<div class="mb-5">
+    <nav class="flex items-center gap-1.5 text-sm text-slate-500">
+        <a href="{{ route('leaves.index') }}" class="hover:text-indigo-600 transition-colors">Leaves</a>
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/></svg>
+        <span class="font-medium text-slate-900">Add Leave</span>
+    </nav>
+</div>
 
-    @section('content')
-        <div class="max-w-xl mx-auto bg-white p-6 rounded shadow">
-            <form action="{{ route('leaves.store') }}" method="POST">
+<div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+    <div class="lg:col-span-2">
+        <div class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h3 class="mb-5 text-sm font-semibold text-slate-900">Leave Details</h3>
+            <form action="{{ route('leaves.store') }}" method="POST" class="space-y-5">
                 @csrf
-                <div class="mb-4">
-                    <label>Name</label>
-                        <select name="employee_id" class="border w-full p-2 rounded" required>
-                            @foreach ($employees as $employee)
-                                <option value="{{ $employee->id }}">{{ $employee->Name }}</option>
-                            @endforeach
-                        </select>
+                <div>
+                    <label for="employee_id" class="block text-sm font-medium text-slate-700">Employee <span class="text-red-500">*</span></label>
+                    <select name="employee_id" id="employee_id" required
+                            class="mt-1.5 block w-full rounded-lg border-0 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900
+                                   shadow-sm ring-1 ring-inset ring-slate-300
+                                   focus:ring-2 focus:ring-inset focus:ring-indigo-600 transition-all">
+                        <option value="">— Select employee —</option>
+                        @foreach ($employees as $employee)
+                            <option value="{{ $employee->id }}" {{ old('employee_id') == $employee->id ? 'selected' : '' }}>
+                                {{ $employee->Name }}
+                            </option>
+                        @endforeach
+                    </select>
+                    @error('employee_id') <p class="mt-1.5 text-xs text-red-600">{{ $message }}</p> @enderror
                 </div>
-                <div class="mb-4">
-                    <label>Leave Type</label>
-                        <select name="leave_type_id" class="border w-full p-2 rounded" required>
-                            @foreach ($leavetypes as $leavetype)
-                                <option value="{{ $leavetype->id }}">{{ $leavetype->name }}</option>
-                            @endforeach
-                        </select>
+                <div>
+                    <label for="leave_type_id" class="block text-sm font-medium text-slate-700">Leave type <span class="text-red-500">*</span></label>
+                    <select name="leave_type_id" id="leave_type_id" required
+                            class="mt-1.5 block w-full rounded-lg border-0 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900
+                                   shadow-sm ring-1 ring-inset ring-slate-300
+                                   focus:ring-2 focus:ring-inset focus:ring-indigo-600 transition-all">
+                        <option value="">— Select type —</option>
+                        @foreach ($leavetypes as $leavetype)
+                            <option value="{{ $leavetype->id }}" {{ old('leave_type_id') == $leavetype->id ? 'selected' : '' }}>
+                                {{ $leavetype->name }}
+                            </option>
+                        @endforeach
+                    </select>
+                    @error('leave_type_id') <p class="mt-1.5 text-xs text-red-600">{{ $message }}</p> @enderror
                 </div>
-
-                <div class="mb-4">
-                    <label for="name" class="block text-sm font-medium text-gray-700">Date From</label>
-                    <input type="date" name="DateFrom" class="mt-1 block w-full rounded border-gray-300 shadow-sm">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label for="DateFrom" class="block text-sm font-medium text-slate-700">Date from <span class="text-red-500">*</span></label>
+                        <input type="date" name="DateFrom" id="DateFrom" value="{{ old('DateFrom') }}" required
+                               class="mt-1.5 block w-full rounded-lg border-0 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900
+                                      shadow-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 transition-all">
+                        @error('DateFrom') <p class="mt-1.5 text-xs text-red-600">{{ $message }}</p> @enderror
+                    </div>
+                    <div>
+                        <label for="DateTo" class="block text-sm font-medium text-slate-700">Date to <span class="text-red-500">*</span></label>
+                        <input type="date" name="DateTo" id="DateTo" value="{{ old('DateTo') }}" required
+                               class="mt-1.5 block w-full rounded-lg border-0 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900
+                                      shadow-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 transition-all">
+                        @error('DateTo') <p class="mt-1.5 text-xs text-red-600">{{ $message }}</p> @enderror
+                    </div>
                 </div>
-                <div class="mb-4">
-                    <label for="name" class="block text-sm font-medium text-gray-700">Date To</label>
-                    <input type="date" name="DateTo" class="mt-1 block w-full rounded border-gray-300 shadow-sm">
-                </div>
-                <div class="mb-4">
-                    <label for="name" class="block text-sm font-medium text-gray-700">Leave Days</label>
-                    <input type="number" name="LeaveDays" class="mt-1 block w-full rounded border-gray-300 shadow-sm">
-                </div>
-                <div class="mb-4">
-                    <label>Is Approved</label>
-                    <select name="isApproved" class="mt-1 block w-full rounded border-gray-300 shadow-sm">
-                        <option value="0">No</option>
-                        <option value="1">Yes</option>
+                <div>
+                    <label for="isApproved" class="block text-sm font-medium text-slate-700">Status</label>
+                    <select name="isApproved" id="isApproved"
+                            class="mt-1.5 block w-full rounded-lg border-0 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900
+                                   shadow-sm ring-1 ring-inset ring-slate-300
+                                   focus:ring-2 focus:ring-inset focus:ring-indigo-600 transition-all">
+                        <option value="0" {{ old('isApproved', '0') == '0' ? 'selected' : '' }}>Pending</option>
+                        <option value="1" {{ old('isApproved') == '1' ? 'selected' : '' }}>Approved</option>
                     </select>
                 </div>
-                <button type="submit" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded">Save</button>
+                <p class="rounded-lg bg-indigo-50 px-4 py-3 text-xs text-indigo-700">
+                    Leave days are calculated automatically from the selected date range.
+                </p>
+                <div class="flex items-center gap-3 pt-1">
+                    <button type="submit"
+                            class="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 transition-colors">
+                        Save Leave
+                    </button>
+                    <a href="{{ route('leaves.index') }}"
+                       class="rounded-lg px-5 py-2.5 text-sm font-semibold text-slate-700 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 transition-colors">
+                        Cancel
+                    </a>
+                </div>
             </form>
+        </div>
+    </div>
 
-            <hr class="my-6">
-
-            <h2 class="text-lg font-semibold mb-2">Import Leaves from CSV</h2>
-
+    <div>
+        <div class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h3 class="mb-4 text-sm font-semibold text-slate-900">Import from CSV</h3>
+            <p class="mb-4 text-xs text-slate-500">Upload a CSV file with columns: <code class="rounded bg-slate-100 px-1 py-0.5 font-mono">employee_id, leave_type_id, date_from, date_to, is_approved</code></p>
             <form action="{{ route('leaves.import') }}" method="POST" enctype="multipart/form-data">
                 @csrf
-                <input type="file" name="csv_file" class="block w-full text-sm text-gray-500 mb-4">
-                <button type="submit" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded">
-                    Import CSV
+                <label class="flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-slate-300 px-4 py-6 text-center hover:border-indigo-400 hover:bg-indigo-50/50 transition-all">
+                    <svg class="mb-2 h-8 w-8 text-slate-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5"/>
+                    </svg>
+                    <span class="text-sm font-medium text-slate-600">Click to upload CSV</span>
+                    <span class="mt-0.5 text-xs text-slate-400">.csv or .txt files only</span>
+                    <input type="file" name="csv_file" accept=".csv,.txt" required class="hidden">
+                </label>
+                <button type="submit"
+                        class="mt-3 w-full rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 transition-colors">
+                    Import
                 </button>
             </form>
         </div>
-    @endsection 
+    </div>
+</div>
+@endsection

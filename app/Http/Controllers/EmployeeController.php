@@ -8,168 +8,196 @@ use App\Models\Company;
 use App\Models\Employee;
 use App\Models\LeaveType;
 use Illuminate\Http\Request;
-
+use Illuminate\Validation\Rule;
 
 class EmployeeController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
+    private function ownedCompanyIds()
+    {
+        return auth()->user()->companies()->pluck('id');
+    }
+
+    private function ownsEmployee(Employee $employee): bool
+    {
+        return $this->ownedCompanyIds()->contains($employee->company_id);
+    }
+
+    private function calculateAnnualLeaveDays(string $employedSince): int
+    {
+        return 28 + Carbon::parse($employedSince)->diffInYears(Carbon::now());
+    }
+
     public function index()
     {
-        $employees = Employee::paginate(3);
+        $employees = Employee::whereIn('company_id', $this->ownedCompanyIds())->paginate(10);
         return view('employees.index', compact('employees'));
     }
 
-    /**
-     * Show the form for creating a new resource.
-     */
-    public function create()
+    public function create(Request $request)
     {
-        $companies = Company::all();
-        return view('employees.create', compact('companies'));
+        $companies = auth()->user()->companies()->get();
+        $preselectedCompanyId = $request->query('company_id');
+        $onboarding = session('onboarding');
+        return view('employees.create', compact('companies', 'preselectedCompanyId', 'onboarding'));
     }
-
-    /**
-     * Store a newly created resource in storage.
-     */
 
     public function store(Request $request)
     {
         $request->validate([
-            'Name' => 'required|string|max:255',
-            'company_id' => 'required|exists:companies,id',
+            'Name'              => 'required|string|max:255',
+            'company_id'        => ['required', Rule::exists('companies', 'id')->where('user_id', auth()->id())],
             'EmployedInCompany' => 'required|date',
-            // 'AnnualLeaveDays' => 'required|integer',  // we will calculate this automatically
-            'LeaveDaysLeft' => 'required|integer'
         ]);
 
-        $employedSince = Carbon::parse($request->EmployedInCompany);
-        $yearsWorked = $employedSince->diffInYears(Carbon::now());
-
-        $annualLeaveDays = 29 + $yearsWorked;
-
-        $annualLeaveType = LeaveType::where('name', 'Annual Leave')->first();
-
-        $totalAnnualLeaveDays = 0;
-        if ($annualLeaveType) {
-            $totalAnnualLeaveDays = Leave::where('employee_id', $request->employee_id)
-                ->where('leave_type_id', $annualLeaveType->id)
-                ->sum('LeaveDays');
-        }
-
-        $leaveDaysLeft = $annualLeaveDays - $totalAnnualLeaveDays;
-
+        $annualLeaveDays = $this->calculateAnnualLeaveDays($request->EmployedInCompany);
 
         Employee::create([
+            'Name'             => $request->Name,
+            'company_id'       => $request->company_id,
+            'EmployedInCompany' => $request->EmployedInCompany,
+            'AnnualLeaveDays'  => $annualLeaveDays,
+            'LeaveDaysLeft'    => $annualLeaveDays,
+        ]);
+
+        // Handle onboarding wizard
+        $onboarding = session('onboarding');
+
+        if ($onboarding && (int) $onboarding['company_id'] === (int) $request->company_id) {
+            $onboarding['added']++;
+            $remaining = $onboarding['target'] - $onboarding['added'];
+
+            if ($remaining > 0) {
+                session(['onboarding' => $onboarding]);
+
+                return redirect()
+                    ->route('employees.create', ['company_id' => $request->company_id])
+                    ->with('success', "Employee {$onboarding['added']} of {$onboarding['target']} added. {$remaining} remaining.");
+            }
+
+            // All employees registered — finish wizard
+            $companyId   = $onboarding['company_id'];
+            $companyName = $onboarding['company_name'];
+            $total       = $onboarding['target'];
+            session()->forget('onboarding');
+
+            return redirect()
+                ->route('companies.show', $companyId)
+                ->with('success', "All {$total} employees registered for \"{$companyName}\"!");
+        }
+
+        return redirect()->route('employees.index')->with('success', 'Employee created successfully.');
+    }
+
+    public function show(Employee $employee)
+    {
+        abort_unless($this->ownsEmployee($employee), 403);
+        return view('employees.show', compact('employee'));
+    }
+
+    public function edit(Employee $employee)
+    {
+        abort_unless($this->ownsEmployee($employee), 403);
+        $companies = auth()->user()->companies()->get();
+        return view('employees.edit', compact('employee', 'companies'));
+    }
+
+    public function update(Request $request, Employee $employee)
+    {
+        abort_unless($this->ownsEmployee($employee), 403);
+
+        $request->validate([
+            'Name' => 'required|string|max:255',
+            'company_id' => ['required', Rule::exists('companies', 'id')->where('user_id', auth()->id())],
+            'EmployedInCompany' => 'required|date',
+        ]);
+
+        $annualLeaveDays = $this->calculateAnnualLeaveDays($request->EmployedInCompany);
+
+        $employee->update([
             'Name' => $request->Name,
             'company_id' => $request->company_id,
             'EmployedInCompany' => $request->EmployedInCompany,
             'AnnualLeaveDays' => $annualLeaveDays,
-            'LeaveDaysLeft' => $leaveDaysLeft,
         ]);
 
-        return redirect()->route('employees.index')->with('success', 'Employee created successfully');
+        // Recalculate leave balance now that AnnualLeaveDays may have changed
+        $this->recalculateLeaveDaysLeft($employee->id);
+
+        return redirect()->route('employees.index')->with('success', 'Employee updated successfully.');
     }
 
-    /**
-     * Display the specified resource.
-     */
-    public function show(Employee $employee)
-    {
-        
-        return view('employees.show', compact('employee'));
-    }
-
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(Employee $employee)
-    {
-        $companies = Company::all();
-        return view('employees.edit', compact('employee', 'companies'));
-    }
-
-    /**
-     * Update the specified resource in storage.
-     */
-
-    public function update(Request $request, Employee $employee)
-{
-    $request->validate([
-        'Name' => 'required|string|max:255',
-        'company_id' => 'required|exists:companies,id',
-        'EmployedInCompany' => 'required|date',
-        'LeaveDaysLeft' => 'required|integer'
-    ]);
-
-    $employedSince = Carbon::parse($request->EmployedInCompany);
-    $yearsWorked = $employedSince->diffInYears(Carbon::now());
-
-    $annualLeaveDays = 29 + $yearsWorked;
-
-
-    $annualLeaveType = LeaveType::where('name', 'Annual Leave')->first();
-
-    $totalAnnualLeaveDays = 0;
-    if ($annualLeaveType) {
-        $totalAnnualLeaveDays = Leave::where('employee_id', $request->employee_id)
-            ->where('leave_type_id', $annualLeaveType->id)
-            ->sum('LeaveDays');
-    }
-
-    $leaveDaysLeft = $annualLeaveDays - $totalAnnualLeaveDays;
-
-
-    $employee->update([
-        'Name' => $request->Name,
-        'company_id' => $request->company_id,
-        'EmployedInCompany' => $request->EmployedInCompany,
-        'AnnualLeaveDays' => $annualLeaveDays,
-        'LeaveDaysLeft' => $leaveDaysLeft,
-    ]);
-
-    return redirect()->route('employees.index')->with('success', 'Employee updated successfully');
-}
-
-    /**
-     * Remove the specified resource from storage.
-     */
     public function destroy(Employee $employee)
     {
+        abort_unless($this->ownsEmployee($employee), 403);
+
         $employee->delete();
-        return redirect()->route('employees.index')->with('succes', 'Employee deleted succesfully');
+        return redirect()->route('employees.index')->with('success', 'Employee deleted successfully.');
     }
+
+    public function skipOnboarding()
+    {
+        $onboarding = session('onboarding');
+        $companyId  = $onboarding['company_id'] ?? null;
+        $added      = $onboarding['added'] ?? 0;
+        $target     = $onboarding['target'] ?? 0;
+        session()->forget('onboarding');
+
+        if ($companyId) {
+            return redirect()
+                ->route('companies.show', $companyId)
+                ->with('info', "{$added} of {$target} employees registered. You can add the rest anytime from the Employees section.");
+        }
+
+        return redirect()->route('companies.index');
+    }
+
     public function import(Request $request)
     {
         $request->validate([
-        'csv_file' => 'required|file|mimes:csv,txt',
-    ]);
-
-    $file = $request->file('csv_file');
-    $data = array_map('str_getcsv', file($file));
-
-    foreach ($data as $index => $row) {
-    if ($index === 0) continue; // skip header row
-
-    $company = Company::where('name', $row[1])->first();
-
-    if ($company) {
-        Employee::create([
-            'Name' => $row[0] ?? '',
-            'company_id' => $company->id,
-            'EmployedInCompany' => $row[2] ?? '',
-            'AnnualLeaveDays' => $row[3] ?? '',
-            'LeaveDaysLeft' => $row[4] ?? ''
+            'csv_file' => 'required|file|mimes:csv,txt',
         ]);
-    } else {
-        \Log::warning('Company not found for row: ' . json_encode($row));
-        continue;
+
+        $file = $request->file('csv_file');
+        $data = array_map('str_getcsv', file($file));
+        $ownedCompanyIds = $this->ownedCompanyIds();
+
+        foreach ($data as $index => $row) {
+            if ($index === 0) continue;
+
+            $company = auth()->user()->companies()->where('name', $row[1] ?? '')->first();
+
+            if ($company) {
+                $annualLeaveDays = isset($row[2]) ? $this->calculateAnnualLeaveDays($row[2]) : 28;
+                Employee::create([
+                    'Name' => $row[0] ?? '',
+                    'company_id' => $company->id,
+                    'EmployedInCompany' => $row[2] ?? now()->toDateString(),
+                    'AnnualLeaveDays' => $annualLeaveDays,
+                    'LeaveDaysLeft' => $annualLeaveDays,
+                ]);
+            } else {
+                \Log::warning('Company not found (or not owned) for import row: ' . json_encode($row));
+            }
+        }
+
+        return redirect()->route('employees.index')->with('success', 'Employees imported successfully.');
     }
-}
 
+    private function recalculateLeaveDaysLeft(int $employeeId): void
+    {
+        $employee = Employee::find($employeeId);
+        if (!$employee) return;
 
-    return redirect()->route('employees.index')->with('success', 'Employees imported successfully.');
+        $annualLeaveType = LeaveType::where('name', 'Annual Leave')->first();
+
+        $taken = $annualLeaveType
+            ? Leave::where('employee_id', $employeeId)
+                ->where('leave_type_id', $annualLeaveType->id)
+                ->where('isApproved', true)
+                ->sum('LeaveDays')
+            : 0;
+
+        $employee->LeaveDaysLeft = $employee->AnnualLeaveDays - $taken;
+        $employee->save();
     }
-
 }
